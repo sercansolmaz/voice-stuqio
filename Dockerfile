@@ -1,13 +1,19 @@
 FROM python:3.12-slim
 
-RUN pip install --no-cache-dir edge-tts==7.2.8 pypdf trafilatura
+RUN apt-get update -qq && apt-get install -y -qq git curl fonts-dejavu-core >/dev/null 2>&1 \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN pip install --no-cache-dir edge-tts==7.2.8 pypdf trafilatura faster-whisper python-docx reportlab
+
+# whisper small modelini imaja gom (ilk istekte indirme yok, deterministik build)
+RUN mkdir -p /models && python -c "from faster_whisper import WhisperModel; WhisperModel('small', device='cpu', compute_type='int8', download_root='/models')" \
+    || echo "model download skipped (runtime'ta indirilecek)"
 
 RUN mkdir -p /app
 WORKDIR /app
 # self-cloning: REST ile olusturulan dockerfile-pack uygulamalarinda build context bostur
-ARG GIT_REF=main
-RUN apt-get update -qq && apt-get install -y -qq git curl >/dev/null 2>&1 && rm -rf /var/lib/apt/lists/* \
-    && git clone --depth 1 --branch $GIT_REF https://github.com/sercansolmaz/voice-stuqio.git /tmp/src \
+ARG GIT_REF=v1.1
+RUN git clone --depth 1 --branch $GIT_REF https://github.com/sercansolmaz/voice-stuqio.git /tmp/src \
     && cp /tmp/src/app.py /tmp/src/README.md . && cp -r /tmp/src/public ./public && rm -rf /tmp/src
 
 ENV PORT=8000

@@ -76,6 +76,7 @@ footer a{color:var(--muted)}
       <button class="tab active" data-tab="text">✍️ Metin Yapıştır</button>
       <button class="tab" data-tab="file">📄 Dosya Yükle</button>
       <button class="tab" data-tab="url">🔗 Link Ver</button>
+      <button class="tab" data-tab="trans">🎙️ Transkript</button>
     </div>
 
     <div id="pane-text">
@@ -98,7 +99,35 @@ footer a{color:var(--muted)}
 
     <div id="pane-url" style="display:none">
       <input type="url" id="url" placeholder="https://ornek-site.com/makale" spellcheck="false">
-      <div class="info">Sayfa sunucudan çekilir; reklam, menü, script gibi öğeler ayıklanır, sadece içerik metni gelir.</div>
+      <div class="info" id="urlinfo">Sayfa sunucudan çekilir; reklam, menü, script gibi öğeler ayıklanır, sadece içerik metni gelir.</div>
+    </div>
+
+    <div id="pane-trans" style="display:none">
+      <div class="drop" id="tdrop">
+        <div class="big">🎧</div>
+        <div><b>Ses/video dosyasını tıkla veya buraya bırak</b></div>
+        <div class="info">mp3, wav, m4a, mp4, webm, ogg, flac · en fazla 100MB · sunucuda Whisper ile yazıya çevrilir</div>
+      </div>
+      <input type="file" id="tfile" accept="audio/*,video/*,.mp3,.wav,.m4a,.mp4,.webm,.ogg,.flac,.aac" style="display:none">
+      <div class="filerow" id="trow" style="display:none">
+        <span>📎 <b id="tname"></b> — <span id="tstatus"></span></span>
+      </div>
+      <div class="progress-wrap" id="tprog" style="display:none">
+        <div class="pbar"><div id="tfill"></div></div>
+        <div class="ptext" id="tptext">Kuyrukta…</div>
+      </div>
+      <div class="result" id="tresult">
+        <div id="tmeta" style="color:var(--muted);font-size:13px;margin-bottom:10px"></div>
+        <div id="tpreview" style="max-height:260px;overflow:auto;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:14px;font-size:14px;line-height:1.7;white-space:pre-wrap;margin-bottom:14px"></div>
+        <div class="res-actions">
+          <a class="btn" id="tdl-srt">⬇️ SRT</a>
+          <a class="btn ghost" id="tdl-txt">⬇️ TXT</a>
+          <a class="btn ghost" id="tdl-docx">⬇️ DOCX</a>
+          <a class="btn ghost" id="tdl-pdf">⬇️ PDF</a>
+          <button class="btn ghost" id="ttts">🔊 Bunu Seslendir</button>
+        </div>
+      </div>
+      <div class="err" id="terr"></div>
     </div>
 
     <div class="row">
@@ -178,7 +207,7 @@ document.querySelectorAll(".tab").forEach(function(t){
     document.querySelectorAll(".tab").forEach(function(x){x.classList.remove("active")});
     t.classList.add("active");
     state.tab=t.getAttribute("data-tab");
-    ["text","file","url"].forEach(function(p){
+    ["text","file","url","trans"].forEach(function(p){
       $("pane-"+p).style.display=(p===state.tab)?"":"none";
     });
   });
@@ -366,6 +395,86 @@ $("again").addEventListener("click",function(){
   $("result").classList.remove("show");
   $("pwrap").classList.remove("show");
   $("text").focus();
+});
+
+// ===== TRANSKRIPT =====
+var tdrop=$("tdrop"),tfile=$("tfile"),tjobId=null,tpoller=null;
+tdrop.addEventListener("click",function(){tfile.click()});
+["dragover","dragenter"].forEach(function(ev){
+  tdrop.addEventListener(ev,function(e){e.preventDefault();tdrop.classList.add("over")});
+});
+["dragleave","drop"].forEach(function(ev){
+  tdrop.addEventListener(ev,function(e){e.preventDefault();tdrop.classList.remove("over")});
+});
+tdrop.addEventListener("drop",function(e){
+  if(e.dataTransfer.files.length)startTrans(e.dataTransfer.files[0]);
+});
+tfile.addEventListener("change",function(){
+  if(tfile.files.length)startTrans(tfile.files[0]);
+});
+
+function tErr(m){var e=$("terr");e.textContent=m;e.classList.add("show")}
+function tErrClear(){$("terr").classList.remove("show")}
+
+function startTrans(f){
+  tErrClear();
+  if(f.size>100*1024*1024){tErr("Dosya 100MB sınırını aşıyor.");return}
+  tjobId=null;
+  $("tresult").classList.remove("show");
+  $("trow").style.display="flex";
+  $("tname").textContent=f.name;
+  $("tstatus").textContent="yükleniyor…";
+  $("tprog").style.display="none";
+  fetch("/api/transcribe",{method:"POST",body:f})
+    .then(function(r){return r.json().then(function(j){return {ok:r.ok,j:j}})})
+    .then(function(res){
+      if(!res.ok||res.j.error)throw new Error(res.j.error||"Yükleme başarısız.");
+      tjobId=res.j.jobId;
+      $("tstatus").textContent="kuyrukta";
+      $("tprog").style.display="block";
+      pollTrans();
+    })
+    .catch(function(e){tErr("Yükleme başarısız: "+e.message)});
+}
+
+function pollTrans(){
+  clearInterval(tpoller);
+  tpoller=setInterval(function(){
+    fetch("/api/transcribe/"+tjobId+"/status")
+      .then(function(r){return r.json()})
+      .then(function(j){
+        if(j.error&&j.status!=="error"){clearInterval(tpoller);tErr(j.error);return}
+        if(j.status==="error"){clearInterval(tpoller);tErr(j.error||"Transkripsiyon başarısız.");return}
+        $("tfill").style.width=(j.progress||0)+"%";
+        $("tstatus").textContent="işleniyor %"+(j.progress||0);
+        $("tptext").textContent="Transkribe ediliyor… %"+(j.progress||0);
+        if(j.status==="done"){
+          clearInterval(tpoller);
+          $("tstatus").textContent="tamamlandı ✅";
+          $("tptext").textContent="Tamamlandı ✅";
+          var mins=Math.floor((j.duration||0)/60),secs=Math.round((j.duration||0)%60);
+          $("tmeta").textContent=(j.language?("Dil: "+j.language+" · "):"")+
+            "Süre: "+mins+" dk "+(secs<10?"0":"")+secs+" sn · "+(j.segments||[]).length+" bölüm";
+          $("tpreview").textContent=j.text||"(metin çıkarılamadı)";
+          ["srt","txt","docx","pdf"].forEach(function(fmt){
+            $("tdl-"+fmt).href="/api/transcribe/"+tjobId+"/download/"+fmt;
+          });
+          $("tresult").classList.add("show");
+        }
+      })
+      .catch(function(){/* poll hatasi: sessizce devam */});
+  },2500);
+}
+
+$("ttts").addEventListener("click",function(){
+  var t=$("tpreview").textContent.trim();
+  if(!t){tErr("Seslendirilecek metin yok.");return}
+  // metin sekmesine tasi ve seslendir
+  document.querySelector('.tab[data-tab="text"]').click();
+  $("text").value=t;
+  $("text").dispatchEvent(new Event("input"));
+  $("go").click();
+  window.scrollTo({top:0,behavior:"smooth"});
 });
 
 updateCounter();
