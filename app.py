@@ -260,38 +260,33 @@ XTTS_LANGS = {"tr": "tr", "en": "en", "de": "de", "fr": "fr", "es": "es",
               "hu": "hu", "el": "el"}
 
 
-def get_xtts():
+# Seed-VC hicrit boru hatti: edge-tts uretir (TR prozodi mukemmel), Seed-VC timbreyi
+# hedef sese cevirir. ECAPA olcumunde XTTS tek-basina 0.54 iken bu boru hatti 0.80 benzerlik verdi.
+SEEDVC_DIR = os.environ.get("SEEDVC_DIR", "/seedvc")
+
+
+def get_seedvc():
     global _xtts_model
     with _xtts_lock:
         if _xtts_model is None:
+            import sys
             import torch
-            from TTS.tts.configs.xtts_config import XttsConfig
-            from TTS.tts.models.xtts import Xtts
-            # aday dizinler: /models/xtts (imaj), /models
-            candidates = [os.path.join(XTTS_MODEL_DIR, "xtts"), XTTS_MODEL_DIR]
-            cdir = None
-            for c in candidates:
-                if c and os.path.isfile(os.path.join(c, "model.pth")):
-                    cdir = c
-                    break
-            if cdir is None:
-                # HF cache fallback (sadece lokalde yoksa)
-                try:
-                    from huggingface_hub import snapshot_download
-                    c = snapshot_download("coqui/XTTS-v2",
-                                          ignore_patterns=["*.whl", "README.md"])
-                    if c and os.path.isfile(os.path.join(c, "model.pth")):
-                        cdir = c
-                except Exception:
-                    pass
-            if cdir is None:
-                raise ValueError("XTTS modeli bulunamadi.")
-            cfg = XttsConfig()
-            cfg.load_json(os.path.join(cdir, "config.json"))
-            m = Xtts.init_from_config(cfg)
-            m.load_checkpoint(cfg, checkpoint_dir=cdir, use_deepspeed=False)
-            _xtts_model = m
+            if SEEDVC_DIR not in sys.path:
+                sys.path.insert(0, SEEDVC_DIR)
+            from seed_vc_infer import SeedVCInfer
+            _xtts_model = SeedVCInfer(SEEDVC_DIR, device="cpu")
         return _xtts_model
+
+
+def edge_tts_synth(text: str, voice: str, out_path: str):
+    """Kaynak sesi uret: edge-tts (mukemmel TR prozodisi)."""
+    import edge_tts
+
+    async def _run():
+        com = edge_tts.Communicate(text, voice)
+        await com.save(out_path)
+
+    asyncio.run(_run())
 
 
 def clone_worker():
@@ -301,45 +296,28 @@ def clone_worker():
         job = CLONE_JOBS.get(job_id)
         if not job:
             continue
+        ref_path = job.get("ref_path")
         try:
             job["status"] = "analyzing"
-            model = get_xtts()
-            # referanstan ses kimligi
-            gpt_cond_latent, speaker_embedding = model.get_conditioning_latents(
-                audio_path=[job["ref_path"]])
+            job["progress"] = 10
+            model = get_seedvc()
+            # 1) kaynak sesi uret: edge-tts, hedef cinste (erkek/kadin eslesmesi timbre aktarimini kolaylastirir)
+            src_path = ref_path + ".src.mp3"
+            edge_tts_synth(job["text"], "tr-TR-EmelNeural", src_path)
             job["status"] = "synthesizing"
-            job["progress"] = 20
-            # metin parcalara bol (uzun metin icin)
-            text = job["text"]
+            job["progress"] = 30
+            # 2) Seed-VC ile timbre transferi: kaynak(edge-tts) -> hedef(kullanicinin sesi)
             import torchaudio as ta
-            buf_parts = []
-            import math
-            pieces = split_clone_text(text)
-            total = len(pieces)
-            for i, piece in enumerate(pieces):
-                out = model.inference(
-                    text=piece,
-                    language=job["language"],
-                    gpt_cond_latent=gpt_cond_latent,
-                    speaker_embedding=speaker_embedding,
-                    temperature=0.55,
-                    length_penalty=1.0,
-                    repetition_penalty=2.0,
-                    enable_text_splitting=True,
-                )
-                wav = torch.tensor(out["wav"]).unsqueeze(0)
-                buf_parts.append(wav)
-                job["progress"] = 20 + int(70 * (i + 1) / total)
-            full = torch.cat(buf_parts, dim=1)
-            # gecici dosyaya yaz (MP3'e cevirme icin ffmpeg yoksa WAV ver)
-            out_path = job["ref_path"] + ".clone.wav"
-            ta.save(out_path, full, 24000)
+            out_path = ref_path + ".clone.wav"
+            model.convert(source=src_path, target=ref_path, output=out_path,
+                          diffusion_steps=25)
             with open(out_path, "rb") as f:
                 job["audio"] = f.read()
-            try:
-                os.unlink(out_path)
-            except Exception:
-                pass
+            for p in (src_path, out_path):
+                try:
+                    os.unlink(p)
+                except Exception:
+                    pass
             job["status"] = "done"
             job["progress"] = 100
         except Exception as e:
