@@ -6,7 +6,7 @@ RUN apt-get update -qq && apt-get install -y -qq git curl fonts-dejavu-core libs
 RUN pip install --no-cache-dir "torch==2.6.0" "torchaudio==2.6.0" --index-url https://download.pytorch.org/whl/cpu
 
 RUN pip install --no-cache-dir edge-tts==7.2.8 pypdf trafilatura faster-whisper python-docx reportlab \
-    "coqui-tts[codec]==0.27.5" "transformers==4.46.2"
+    "coqui-tts[codec]==0.27.5" "transformers==4.57.1"
 
 # whisper turbo + xtts-v2 modellerini imaja gom
 RUN mkdir -p /models \
@@ -17,7 +17,7 @@ RUN mkdir -p /models \
 RUN mkdir -p /app
 WORKDIR /app
 # self-cloning: REST ile olusturulan dockerfile-pack uygulamalarinda build context bostur
-ARG GIT_REF=v1.5
+ARG GIT_REF=v1.6
 RUN git clone --depth 1 --branch $GIT_REF https://github.com/sercansolmaz/voice-stuqio.git /tmp/src \
     && cp /tmp/src/app.py /tmp/src/README.md . && cp -r /tmp/src/public ./public && rm -rf /tmp/src
 
