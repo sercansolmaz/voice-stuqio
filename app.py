@@ -236,14 +236,132 @@ import uuid as uuidlib
 MAX_MEDIA_BYTES = int(os.environ.get("MAX_MEDIA_BYTES", str(100 * 1024 * 1024)))
 WHISPER_MODEL_NAME = os.environ.get("WHISPER_MODEL", "turbo")
 WHISPER_MODEL_DIR = os.environ.get("WHISPER_MODEL_DIR", "/models")
+XTTS_MODEL_DIR = os.environ.get("XTTS_MODEL_DIR", "/models")
 JOB_TTL_SECONDS = 3 * 3600
 MAX_JOBS_KEPT = 40
+MAX_CLONE_REF_BYTES = int(os.environ.get("MAX_CLONE_REF_BYTES", str(20 * 1024 * 1024)))
+MAX_CLONE_TEXT_CHARS = int(os.environ.get("MAX_CLONE_TEXT_CHARS", "600"))
 
 JOBS = {}
 JOBS_LOCK = threading.Lock()
 _whisper_model = None
 _whisper_lock = threading.Lock()
 TRANS_Q = queue.Queue()
+
+# ---------- Ses klonlama (XTTS-v2) ----------
+
+_xtts_model = None
+_xtts_lock = threading.Lock()
+CLONE_JOBS = {}
+CLONE_Q = queue.Queue()
+XTTS_LANGS = {"tr": "tr", "en": "en", "de": "de", "fr": "fr", "es": "es",
+              "it": "it", "az": "az", "ru": "ru", "ar": "ar", "pt": "pt",
+              "nl": "nl", "pl": "pl", "cs": "cs", "sk": "sk", "uk": "uk",
+              "hu": "hu", "el": "el"}
+
+
+def get_xtts():
+    global _xtts_model
+    with _xtts_lock:
+        if _xtts_model is None:
+            import torch
+            from TTS.tts.configs.xtts_config import XttsConfig
+            from TTS.tts.models.xtts import Xtts
+            cdir = XTTS_MODEL_DIR if os.path.isdir(XTTS_MODEL_DIR) else None
+            if cdir is None:
+                # HF cache fallback
+                try:
+                    from huggingface_hub import snapshot_download
+                    cdir = snapshot_download("coqui/XTTS-v2",
+                                             ignore_patterns=["*.whl", "README.md"])
+                except Exception:
+                    cdir = None
+            if cdir is None or not os.path.isfile(os.path.join(cdir, "model.pth")):
+                raise ValueError("XTTS modeli bulunamadi.")
+            cfg = XttsConfig()
+            cfg.load_json(os.path.join(cdir, "config.json"))
+            m = Xtts.init_from_config(cfg)
+            m.load_checkpoint(cfg, checkpoint_dir=cdir, use_deepspeed=False)
+            _xtts_model = m
+        return _xtts_model
+
+
+def clone_worker():
+    import torch
+    while True:
+        job_id = CLONE_Q.get()
+        job = CLONE_JOBS.get(job_id)
+        if not job:
+            continue
+        try:
+            job["status"] = "analyzing"
+            model = get_xtts()
+            # referanstan ses kimligi
+            gpt_cond_latent, speaker_embedding = model.get_conditioning_latents(
+                audio_path=[job["ref_path"]])
+            job["status"] = "synthesizing"
+            job["progress"] = 20
+            # metin parcalara bol (uzun metin icin)
+            text = job["text"]
+            import torchaudio as ta
+            buf_parts = []
+            import math
+            pieces = split_clone_text(text)
+            total = len(pieces)
+            for i, piece in enumerate(pieces):
+                out = model.inference(
+                    text=piece,
+                    language=job["language"],
+                    gpt_cond_latent=gpt_cond_latent,
+                    speaker_embedding=speaker_embedding,
+                )
+                wav = torch.tensor(out["wav"]).unsqueeze(0)
+                buf_parts.append(wav)
+                job["progress"] = 20 + int(70 * (i + 1) / total)
+            full = torch.cat(buf_parts, dim=1)
+            # gecici dosyaya yaz (MP3'e cevirme icin ffmpeg yoksa WAV ver)
+            out_path = job["ref_path"] + ".clone.wav"
+            ta.save(out_path, full, 24000)
+            with open(out_path, "rb") as f:
+                job["audio"] = f.read()
+            try:
+                os.unlink(out_path)
+            except Exception:
+                pass
+            job["status"] = "done"
+            job["progress"] = 100
+        except Exception as e:
+            job["status"] = "error"
+            job["error"] = "Klonlama basarisiz: %s" % e
+        finally:
+            job["finished_at"] = time.time()
+            if job.get("ref_path"):
+                try:
+                    os.unlink(job["ref_path"])
+                except Exception:
+                    pass
+                job["ref_path"] = None
+
+
+def split_clone_text(text, max_len=250):
+    """XTTS icin metin ~250 karakterlik parcalara boler (nokta/paragraf bazli)."""
+    if len(text) <= max_len:
+        return [text]
+    parts = re.split(r"(?<=[.!?…])\s+", text)
+    pieces, cur = [], ""
+    for p in parts:
+        if len(cur) + len(p) + 1 > max_len and cur:
+            pieces.append(cur.strip())
+            cur = p
+        else:
+            cur = (cur + " " + p).strip()
+    if cur.strip():
+        pieces.append(cur.strip())
+    return [p for p in pieces if p]
+
+
+threading.Thread(target=clone_worker, daemon=True).start()
+
 
 LANG_CODES = {"tr": "Turkce", "en": "Ingilizce", "de": "Almanca", "fr": "Fransizca",
               "es": "Ispanyolca", "it": "Italyanca", "az": "Azerbaycan Turkcesi",
@@ -471,6 +589,24 @@ class Handler(BaseHTTPRequestHandler):
         m = re.match(r"^/api/transcribe/([a-f0-9]{4,32})/download/(srt|txt|docx|pdf)$", path)
         if m:
             return self.handle_download(m.group(1), m.group(2))
+        m = re.match(r"^/api/clone/([a-f0-9]{4,32})/status$", path)
+        if m:
+            job = CLONE_JOBS.get(m.group(1))
+            if not job:
+                return self.send_json({"error": "Is bulunamadi."}, 404)
+            out = {"status": job["status"], "progress": job.get("progress", 0)}
+            if job["status"] == "error":
+                out["error"] = job.get("error")
+            self.send_json(out)
+            return
+        m = re.match(r"^/api/clone/([a-f0-9]{4,32})/download$", path)
+        if m:
+            job = CLONE_JOBS.get(m.group(1))
+            if not job:
+                return self.send_json({"error": "Is bulunamadi."}, 404)
+            if job["status"] != "done" or not job.get("audio"):
+                return self.send_json({"error": "Is henuz tamamlanmadi."}, 400)
+            return self.send_bytes(job["audio"], "audio/wav", "klonlanmis-ses.wav")
         if path == "/robots.txt":
             body = b"User-agent: *\nAllow: /\n"
             return self.send_bytes(body, "text/plain")
@@ -490,6 +626,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.handle_extract()
             if path == "/api/transcribe":
                 return self.handle_transcribe()
+            if path == "/api/clone":
+                return self.handle_clone()
             self.send_json({"error": "Bulunamadi."}, 404)
         except Exception as e:
             logging.exception("hata: %s", e)
@@ -497,6 +635,70 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json({"error": "Sunucu hatasi: %s" % e}, 500)
             except Exception:
                 pass
+
+    def handle_clone(self):
+        # ham govde: referans ses; text+language query string'de
+        import urllib.parse as up
+        qs = up.parse_qs(self.path.split("?", 1)[1] if "?" in self.path else "")
+        text = (qs.get("text", [""])[0] or "").strip()
+        language = qs.get("language", ["tr"])[0] or "tr"
+        consent = qs.get("consent", ["0"])[0]
+        if consent != "1":
+            return self.send_json({"error": "Ses ornegi icin kullanim izni onayi gerekli."}, 400)
+        if not text:
+            return self.send_json({"error": "Metin bos."}, 400)
+        if len(text) > MAX_CLONE_TEXT_CHARS:
+            return self.send_json({"error": "Metin cok uzun (sinir %d karakter)." % MAX_CLONE_TEXT_CHARS}, 400)
+        if language not in XTTS_LANGS:
+            return self.send_json({"error": "Desteklenmeyen dil."}, 400)
+        if CLONE_Q.qsize() >= 1:
+            return self.send_json({"error": "Sunucu musait degil, birazdan tekrar dene."}, 429)
+        try:
+            data = self.read_body(MAX_CLONE_REF_BYTES)
+        except ValueError as e:
+            return self.send_json({"error": "%s (sinir %d MB)." % (e, MAX_CLONE_REF_BYTES // (1024 * 1024))}, 400)
+        if not data or len(data) < 1000:
+            return self.send_json({"error": "Ses ornegi bos veya cok kucuk."}, 400)
+        tmpdir = os.environ.get("TMPDIR") or "/tmp"
+        os.makedirs(tmpdir, exist_ok=True)
+        fd, ref_path = tempfile.mkstemp(prefix="cloneref-", suffix=".bin", dir=tmpdir)
+        with os.fdopen(fd, "wb") as f:
+            f.write(data)
+        # her formatti (mp3/m4a/webm/ogg/flac/wav) 24kHz WAV'a cevir - XTTS guvenli okusun
+        try:
+            import torch as _torch
+            import torchaudio as _ta
+            from faster_whisper.audio import decode_audio
+            audio = decode_audio(ref_path, sampling_rate=24000)
+            if audio is None or len(audio) < 24000:  # < 1sn
+                raise ValueError("Ses ornegi cok kisa (en az 6 sn onerilir).")
+            wav_path = ref_path + ".wav"
+            _ta.save(wav_path, _torch.from_numpy(audio).unsqueeze(0), 24000)
+            os.unlink(ref_path)
+            ref_path = wav_path
+        except ValueError:
+            try:
+                os.unlink(ref_path)
+            except Exception:
+                pass
+            return self.send_json({"error": "Ses ornegi okunamadi ( desteklenen: wav, mp3, m4a, webm, ogg, flac )."}, 400)
+        except Exception:
+            # cevrilemediyse ham dosyayi dene (wav ise zaten calisir)
+            pass
+        job_id = uuidlib.uuid4().hex[:16]
+        now = time.time()
+        CLONE_JOBS[job_id] = {
+            "id": job_id, "status": "queued", "progress": 5,
+            "ref_path": ref_path, "text": text, "language": language,
+            "created_at": now, "finished_at": 0, "audio": None, "error": None,
+        }
+        # eski isleri temizle
+        for jid in [j for j, v in CLONE_JOBS.items()
+                    if v["status"] in ("done", "error")
+                    and now - v.get("finished_at", now) > JOB_TTL_SECONDS]:
+            CLONE_JOBS.pop(jid, None)
+        CLONE_Q.put(job_id)
+        self.send_json({"jobId": job_id, "status": "queued"})
 
     def handle_transcribe(self):
         prune_jobs()
