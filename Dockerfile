@@ -6,7 +6,7 @@ RUN mkdir -p /app
 WORKDIR /app
 # self-cloning: REST ile olusturulan dockerfile-pack uygulamalarinda build context bostur
 ARG GIT_REF=main
-RUN apt-get update -qq && apt-get install -y -qq git >/dev/null 2>&1 && rm -rf /var/lib/apt/lists/* \
+RUN apt-get update -qq && apt-get install -y -qq git curl >/dev/null 2>&1 && rm -rf /var/lib/apt/lists/* \
     && git clone --depth 1 --branch $GIT_REF https://github.com/sercansolmaz/voice-stuqio.git /tmp/src \
     && cp /tmp/src/app.py /tmp/src/README.md . && cp -r /tmp/src/public ./public && rm -rf /tmp/src
 
