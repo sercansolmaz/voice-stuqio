@@ -288,7 +288,7 @@ footer b{background:var(--grad);-webkit-background-clip:text;background-clip:tex
         <div id="cmictime" style="font-size:28px;font-weight:800;letter-spacing:.5px;font-variant-numeric:tabular-nums">0:00</div>
         <div id="cmichint" style="color:var(--muted);font-size:13px;margin:6px 0 14px">Aşağıdaki metni doğal bir hızda, gürültüsüz bir ortamda oku</div>
         <div class="pbar" style="margin-bottom:14px"><div id="cmiclevel" style="width:0%;transition:width .1s"></div></div>
-        <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap">
+        <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap" id="cmicbtns">
           <button class="btn" id="cmicbtn">⏺ Kaydı Başlat</button>
           <button class="btn ghost" id="cmicuse" style="display:none">✅ Bu kaydı kullan</button>
         </div>
@@ -761,15 +761,17 @@ $("cmicbtn").addEventListener("click",async function(){
     micState.blob=new Blob(micState.chunks,{type:micState.rec.mimeType||"audio/webm"});
     var dur=micState.seconds;
     if(dur<5){cErr("Kayıt çok kısa ("+dur.toFixed(1)+" sn) — en az 6-8 saniye oku.");$("cmicuse").style.display="none";return}
-    $("cmichint").textContent="Kayıt tamam: "+micFmt(dur)+" — dinlemek için oynat, kullanmak için onayla";
+    // kaydi otomatik olarak ses ornegi olarak kullan
+    var f=new File([micState.blob],"mikrofon-kaydi"+(micState.blob.type.indexOf("mp4")>=0?".m4a":".webm"),{type:micState.blob.type||"audio/webm"});
+    setCloneFile(f);
+    $("cmichint").textContent="Kayıt hazır: "+micFmt(dur)+" — istersen tekrar kaydet, sonra aşağıdan metnini yazıp Klonla";
     // onizleme
     var url=URL.createObjectURL(micState.blob);
     var a=document.createElement("audio");
     a.controls=true;a.src=url;a.style.cssText="width:100%;margin:10px 0;display:block";
     var old=$("cmicbox").querySelector("audio");
     if(old)old.remove();
-    $("cmicbox").insertBefore(a,$("cmicbox").querySelector("div:last-child"));
-    $("cmicuse").style.display="";
+    $("cmicbtns").parentNode.insertBefore(a,$("cmicbtns"));
   };
   micState.rec.start(100);
 });
