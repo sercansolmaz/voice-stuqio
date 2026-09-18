@@ -234,7 +234,7 @@ import time
 import uuid as uuidlib
 
 MAX_MEDIA_BYTES = int(os.environ.get("MAX_MEDIA_BYTES", str(100 * 1024 * 1024)))
-WHISPER_MODEL_NAME = os.environ.get("WHISPER_MODEL", "small")
+WHISPER_MODEL_NAME = os.environ.get("WHISPER_MODEL", "turbo")
 WHISPER_MODEL_DIR = os.environ.get("WHISPER_MODEL_DIR", "/models")
 JOB_TTL_SECONDS = 3 * 3600
 MAX_JOBS_KEPT = 40
