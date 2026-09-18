@@ -267,16 +267,24 @@ def get_xtts():
             import torch
             from TTS.tts.configs.xtts_config import XttsConfig
             from TTS.tts.models.xtts import Xtts
-            cdir = XTTS_MODEL_DIR if os.path.isdir(XTTS_MODEL_DIR) else None
+            # aday dizinler: /models/xtts (imaj), /models
+            candidates = [os.path.join(XTTS_MODEL_DIR, "xtts"), XTTS_MODEL_DIR]
+            cdir = None
+            for c in candidates:
+                if c and os.path.isfile(os.path.join(c, "model.pth")):
+                    cdir = c
+                    break
             if cdir is None:
-                # HF cache fallback
+                # HF cache fallback (sadece lokalde yoksa)
                 try:
                     from huggingface_hub import snapshot_download
-                    cdir = snapshot_download("coqui/XTTS-v2",
-                                             ignore_patterns=["*.whl", "README.md"])
+                    c = snapshot_download("coqui/XTTS-v2",
+                                          ignore_patterns=["*.whl", "README.md"])
+                    if c and os.path.isfile(os.path.join(c, "model.pth")):
+                        cdir = c
                 except Exception:
-                    cdir = None
-            if cdir is None or not os.path.isfile(os.path.join(cdir, "model.pth")):
+                    pass
+            if cdir is None:
                 raise ValueError("XTTS modeli bulunamadi.")
             cfg = XttsConfig()
             cfg.load_json(os.path.join(cdir, "config.json"))
