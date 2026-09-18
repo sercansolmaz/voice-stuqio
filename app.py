@@ -322,6 +322,10 @@ def clone_worker():
                     language=job["language"],
                     gpt_cond_latent=gpt_cond_latent,
                     speaker_embedding=speaker_embedding,
+                    temperature=0.55,
+                    length_penalty=1.0,
+                    repetition_penalty=2.0,
+                    enable_text_splitting=True,
                 )
                 wav = torch.tensor(out["wav"]).unsqueeze(0)
                 buf_parts.append(wav)

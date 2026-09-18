@@ -286,7 +286,7 @@ footer b{background:var(--grad);-webkit-background-clip:text;background-clip:tex
 
       <div id="cmicbox" style="display:none;background:rgba(0,0,0,.3);border:1px solid var(--stroke);border-radius:var(--r-md);padding:18px;text-align:center">
         <div id="cmictime" style="font-size:28px;font-weight:800;letter-spacing:.5px;font-variant-numeric:tabular-nums">0:00</div>
-        <div id="cmichint" style="color:var(--muted);font-size:13px;margin:6px 0 14px">Aşağıdaki metni doğal bir hızda, gürültüsüz bir ortamda oku</div>
+        <div id="cmichint" style="color:var(--muted);font-size:13px;margin:6px 0 14px">Sessiz bir ortamda, mikrofona 10-15 cm mesafeden, doğal bir hızda oku — benzerlik büyük ölçüde kayıt kalitesine bağlı</div>
         <div class="pbar" style="margin-bottom:14px"><div id="cmiclevel" style="width:0%;transition:width .1s"></div></div>
         <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap" id="cmicbtns">
           <button class="btn" id="cmicbtn">⏺ Kaydı Başlat</button>
@@ -349,6 +349,7 @@ footer b{background:var(--grad);-webkit-background-clip:text;background-clip:tex
         <div class="audiobox"><audio id="caudio" controls playsinline></audio></div>
         <div class="res-actions">
           <a class="btn" id="cdl" download="klonlanmis-ses.wav">⬇️ WAV indir</a>
+          <button class="btn ghost" id="creroll">🔁 Beğenmedim, yeniden üret</button>
           <button class="btn ghost" id="cagain">↺ Yeni klonlama</button>
         </div>
       </div>
@@ -877,6 +878,12 @@ $("cagain").addEventListener("click",function(){
   $("cresult").classList.remove("show");
   $("cprog").style.display="none";
   $("ctext").focus();
+});
+
+$("creroll").addEventListener("click",function(){
+  if(!cfileObj){cErr("Ses örneği yok.");return}
+  $("cresult").classList.remove("show");
+  $("cgo").click();
 });
 
 updateCounter();
