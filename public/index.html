@@ -2,85 +2,232 @@
 <html lang="tr">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Voice — Metni Sese Çevir</title>
-<meta name="description" content="Metin, dosya veya link verin; sunucuda seslendirip MP3 olarak dinleyin ve indirin.">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0a0a12">
+<title>voice — metni sese, sesi yazıya çevir</title>
+<meta name="description" content="Metin, dosya veya link ver; sunucuda seslendirip MP3 olarak dinle. Ses/video yükle; transkriptini SRT, DOCX, PDF olarak indir.">
 <style>
 :root{
-  --bg:#0d1117;--bg2:#161b22;--bg3:#21262d;--border:#30363d;
-  --text:#e6edf3;--muted:#8b949e;--accent:#a3e635;--accent-dark:#84cc16;
-  --danger:#f87171;--radius:12px;
+  --bg:#0a0a12;
+  --surface:rgba(255,255,255,.045);
+  --surface-2:rgba(255,255,255,.08);
+  --stroke:rgba(255,255,255,.09);
+  --stroke-strong:rgba(255,255,255,.16);
+  --text:#f2f4f8;
+  --muted:#9aa1ad;
+  --accent:#8b7cff;
+  --accent-2:#4cc9f0;
+  --grad:linear-gradient(135deg,#8b7cff 0%,#6a5cff 45%,#4cc9f0 100%);
+  --grad-soft:linear-gradient(135deg,rgba(139,124,255,.16),rgba(76,201,240,.12));
+  --danger:#ff7a8a;
+  --ok:#5eead4;
+  --r-lg:20px;
+  --r-md:14px;
+  --r-sm:10px;
 }
-*{box-sizing:border-box;margin:0;padding:0}
-body{background:var(--bg);color:var(--text);font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;min-height:100vh}
-.wrap{max-width:880px;margin:0 auto;padding:28px 20px 60px}
-header{display:flex;align-items:center;gap:12px;margin-bottom:26px}
-.logo{width:42px;height:42px;border-radius:10px;background:linear-gradient(135deg,var(--accent),var(--accent-dark));display:flex;align-items:center;justify-content:center;font-size:22px}
-h1{font-size:22px;font-weight:700}
-h1 span{color:var(--accent)}
-.sub{color:var(--muted);font-size:13px}
-.card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:20px;margin-bottom:16px}
-.tabs{display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap}
-.tab{padding:9px 16px;border-radius:999px;border:1px solid var(--border);background:var(--bg2);color:var(--muted);cursor:pointer;font-size:14px;transition:.15s}
-.tab:hover{color:var(--text)}
-.tab.active{background:var(--accent);color:#0d1117;border-color:var(--accent);font-weight:600}
-textarea{width:100%;min-height:180px;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:14px;font:15px/1.6 inherit;resize:vertical}
-textarea:focus,input[type=url],input[type=text]{outline:none}
-textarea:focus{border-color:var(--accent)}
-input[type=url]{width:100%;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:12px 14px;font-size:15px}
-input[type=url]:focus{border-color:var(--accent)}
-.drop{border:2px dashed var(--border);border-radius:10px;padding:34px 16px;text-align:center;color:var(--muted);cursor:pointer;transition:.15s}
-.drop:hover,.drop.over{border-color:var(--accent);color:var(--text)}
-.drop .big{font-size:30px;margin-bottom:8px}
-.filerow{display:flex;align-items:center;gap:10px;margin-top:12px;color:var(--muted);font-size:14px;flex-wrap:wrap}
-.filerow b{color:var(--text)}
-.row{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin-top:16px}
-.field{display:flex;flex-direction:column;gap:6px}
-.field label{font-size:12px;color:var(--muted);font-weight:600;letter-spacing:.3px;text-transform:uppercase}
-select{background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:10px 12px;font-size:14px;min-width:160px}
-.btn{background:var(--accent);color:#0d1117;border:none;border-radius:8px;padding:12px 26px;font-size:15px;font-weight:700;cursor:pointer;transition:.15s}
-.btn:hover{background:var(--accent-dark)}
-.btn:disabled{opacity:.5;cursor:not-allowed}
-.btn.ghost{background:transparent;border:1px solid var(--border);color:var(--muted)}
-.btn.ghost:hover{color:var(--text);border-color:var(--muted)}
-.counter{color:var(--muted);font-size:13px;margin-top:6px}
-.counter.over{color:var(--danger)}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html{scroll-behavior:smooth}
+body{
+  background:var(--bg);color:var(--text);
+  font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  min-height:100dvh;overflow-x:hidden;
+}
+/* aurora arkaplan */
+.aurora{position:fixed;inset:0;z-index:-1;overflow:hidden;pointer-events:none}
+.aurora::before,.aurora::after{
+  content:"";position:absolute;width:60vmax;height:60vmax;border-radius:50%;
+  filter:blur(90px);opacity:.28;
+}
+.aurora::before{background:radial-gradient(circle,#6a5cff,transparent 60%);top:-25vmax;left:-15vmax;animation:drift 26s ease-in-out infinite alternate}
+.aurora::after{background:radial-gradient(circle,#4cc9f0,transparent 60%);bottom:-30vmax;right:-20vmax;animation:drift 32s ease-in-out infinite alternate-reverse}
+@keyframes drift{from{transform:translate(0,0) scale(1)}to{transform:translate(9vmax,6vmax) scale(1.15)}}
+@media (prefers-reduced-motion:reduce){.aurora::before,.aurora::after{animation:none}}
+
+.wrap{max-width:860px;margin:0 auto;padding:max(20px,env(safe-area-inset-top)) 16px calc(48px + env(safe-area-inset-bottom))}
+
+/* header */
+header{display:flex;align-items:center;gap:14px;padding:22px 4px 26px}
+.logo{
+  width:52px;height:52px;border-radius:16px;flex:none;
+  background:var(--grad);display:flex;align-items:center;justify-content:center;
+  font-size:26px;box-shadow:0 8px 32px rgba(106,92,255,.45);
+}
+.brand h1{font-size:clamp(20px,4.5vw,26px);font-weight:800;letter-spacing:-.02em;line-height:1.2}
+.brand h1 span{background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent}
+.brand .sub{color:var(--muted);font-size:13.5px;margin-top:3px;max-width:52ch}
+
+/* kart */
+.card{
+  background:var(--surface);
+  border:1px solid var(--stroke);
+  border-radius:var(--r-lg);
+  padding:clamp(16px,3vw,24px);
+  backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);
+  box-shadow:0 20px 60px rgba(0,0,0,.35);
+  margin-bottom:16px;
+}
+
+/* segment (sekmeler) */
+.seg{
+  display:flex;gap:4px;padding:4px;
+  background:rgba(0,0,0,.28);border:1px solid var(--stroke);border-radius:16px;
+  margin-bottom:18px;overflow-x:auto;scrollbar-width:none;
+}
+.seg::-webkit-scrollbar{display:none}
+.segbtn{
+  flex:1;min-width:72px;border:none;background:transparent;color:var(--muted);
+  padding:10px 8px;border-radius:12px;cursor:pointer;
+  font-size:13px;font-weight:600;white-space:nowrap;
+  display:flex;flex-direction:column;align-items:center;gap:4px;
+  transition:color .18s,background .18s;
+}
+.segbtn .ic{font-size:17px;line-height:1}
+.segbtn:hover{color:var(--text)}
+.segbtn.active{background:var(--grad);color:#fff;box-shadow:0 6px 22px rgba(106,92,255,.4)}
+
+/* form ogeleri */
+textarea{
+  width:100%;min-height:190px;resize:vertical;
+  background:rgba(0,0,0,.3);border:1px solid var(--stroke);border-radius:var(--r-md);
+  color:var(--text);padding:14px 16px;font:16px/1.65 inherit;
+  transition:border-color .18s,box-shadow .18s;
+}
+textarea::placeholder,input::placeholder{color:#5b6270}
+textarea:focus,input[type=url]:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px rgba(139,124,255,.18)}
+input[type=url]{
+  width:100%;background:rgba(0,0,0,.3);border:1px solid var(--stroke);border-radius:var(--r-md);
+  color:var(--text);padding:14px 16px;font-size:16px;
+}
+select{
+  background:rgba(0,0,0,.3);border:1px solid var(--stroke);border-radius:var(--r-sm);
+  color:var(--text);padding:12px 14px;font-size:15px;min-width:150px;width:100%;
+  appearance:none;-webkit-appearance:none;cursor:pointer;
+  background-image:url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%239aa1ad' stroke-width='2' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-repeat:no-repeat;background-position:right 14px center;
+}
+select:focus{outline:none;border-color:var(--accent)}
+
+/* dropzone */
+.drop{
+  border:1.5px dashed var(--stroke-strong);border-radius:var(--r-md);
+  padding:38px 18px;text-align:center;color:var(--muted);cursor:pointer;
+  transition:border-color .18s,background .18s,transform .18s;
+}
+.drop:hover,.drop.over{border-color:var(--accent);background:var(--grad-soft);transform:scale(1.005)}
+.drop .big{font-size:34px;margin-bottom:10px;filter:drop-shadow(0 4px 14px rgba(106,92,255,.5))}
+.drop b{color:var(--text)}
+.info{color:var(--muted);font-size:13px;margin-top:6px}
+
+.filerow{
+  display:flex;align-items:center;gap:10px;margin-top:12px;
+  background:var(--surface-2);border:1px solid var(--stroke);border-radius:var(--r-sm);
+  padding:12px 14px;font-size:14px;color:var(--muted);flex-wrap:wrap;
+}
+.filerow b{color:var(--text);word-break:break-all}
+
+/* kontroller */
+.controls{display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:12px;align-items:end;margin-top:18px}
+.field{display:flex;flex-direction:column;gap:7px;min-width:0}
+.field label{font-size:11px;color:var(--muted);font-weight:700;letter-spacing:.8px;text-transform:uppercase}
+
+.btn{
+  display:inline-flex;align-items:center;justify-content:center;gap:8px;
+  background:var(--grad);color:#fff;border:none;border-radius:var(--r-sm);
+  padding:14px 26px;font-size:15px;font-weight:700;cursor:pointer;
+  box-shadow:0 8px 28px rgba(106,92,255,.4);
+  transition:transform .15s,box-shadow .15s,opacity .15s;min-height:48px;
+  text-decoration:none;
+}
+.btn:hover{transform:translateY(-1px);box-shadow:0 12px 34px rgba(106,92,255,.5)}
+.btn:active{transform:translateY(0)}
+.btn:disabled{opacity:.45;cursor:not-allowed;transform:none}
+.btn.ghost{
+  background:var(--surface-2);border:1px solid var(--stroke);color:var(--text);
+  box-shadow:none;min-height:44px;padding:11px 20px;
+}
+.btn.ghost:hover{background:rgba(255,255,255,.13);box-shadow:none}
+
+.counter{color:var(--muted);font-size:13px;margin-top:8px}
+
+/* progress */
 .progress-wrap{display:none;margin-top:16px}
 .progress-wrap.show{display:block}
-.pbar{height:8px;background:var(--bg3);border-radius:99px;overflow:hidden}
-.pbar>div{height:100%;background:var(--accent);width:0%;transition:width .3s;border-radius:99px}
-.ptext{font-size:13px;color:var(--muted);margin-top:8px}
+.pbar{height:8px;background:rgba(0,0,0,.35);border-radius:99px;overflow:hidden;border:1px solid var(--stroke)}
+.pbar>div{height:100%;background:var(--grad);width:0%;transition:width .35s ease;border-radius:99px}
+.ptext{font-size:13px;color:var(--muted);margin-top:9px}
+
+/* sonuc */
 .result{display:none;margin-top:20px}
-.result.show{display:block}
-.result audio{width:100%;margin-bottom:12px}
+.result.show{display:block;animation:rise .35s ease}
+@keyframes rise{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){.result.show{animation:none}}
+.audiobox{
+  background:rgba(0,0,0,.3);border:1px solid var(--stroke);border-radius:var(--r-md);
+  padding:12px;margin-bottom:14px;
+}
+.result audio{width:100%;display:block}
 .res-actions{display:flex;gap:10px;flex-wrap:wrap}
-.err{display:none;margin-top:14px;background:rgba(248,113,113,.1);border:1px solid var(--danger);color:var(--danger);border-radius:8px;padding:12px 14px;font-size:14px}
+.res-actions .btn{flex:1;min-width:120px}
+
+#tpreview{
+  max-height:280px;overflow:auto;background:rgba(0,0,0,.3);
+  border:1px solid var(--stroke);border-radius:var(--r-md);
+  padding:16px;font-size:14.5px;line-height:1.75;white-space:pre-wrap;
+  margin-bottom:14px;color:#d7dbe4;
+}
+#tmeta{color:var(--muted);font-size:13px;margin-bottom:10px}
+
+.err{
+  display:none;margin-top:14px;
+  background:rgba(255,122,138,.09);border:1px solid rgba(255,122,138,.35);color:var(--danger);
+  border-radius:var(--r-sm);padding:12px 15px;font-size:14px;
+}
 .err.show{display:block}
-.info{color:var(--muted);font-size:13px;margin-top:4px}
-footer{margin-top:30px;text-align:center;color:var(--muted);font-size:12px}
-footer a{color:var(--muted)}
+
+footer{margin-top:34px;text-align:center;color:#5b6270;font-size:12.5px}
+footer b{background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent}
+
+/* ===== mobil ===== */
+@media (max-width:680px){
+  header{padding:14px 2px 20px;gap:12px}
+  .logo{width:44px;height:44px;border-radius:13px;font-size:22px}
+  .brand .sub{font-size:12.5px}
+  .controls{grid-template-columns:1fr 1fr;gap:10px}
+  .controls .btn{grid-column:1 / -1;width:100%}
+  .segbtn{min-width:64px;font-size:12px;padding:9px 4px}
+  .segbtn .ic{font-size:16px}
+  .drop{padding:30px 14px}
+  textarea{min-height:150px}
+  .res-actions .btn{flex:1 1 100%}
+}
+@media (max-width:400px){
+  .controls{grid-template-columns:1fr}
+  .brand h1{font-size:19px}
+}
 </style>
 </head>
 <body>
+<div class="aurora"></div>
 <div class="wrap">
+
   <header>
     <div class="logo">🎙️</div>
-    <div>
-      <h1>voice<span>.stuqio.com</span></h1>
-      <div class="sub">Metni, dosyayı veya linki ver — sunucuda seslendirsin, MP3 olarak dinle & indir.</div>
+    <div class="brand">
+      <h1>voice<span>.stuqio</span></h1>
+      <div class="sub">Metni sese, sesi yazıya çevir — hepsi sunucunda, ücretsiz.</div>
     </div>
   </header>
 
   <div class="card">
-    <div class="tabs">
-      <button class="tab active" data-tab="text">✍️ Metin Yapıştır</button>
-      <button class="tab" data-tab="file">📄 Dosya Yükle</button>
-      <button class="tab" data-tab="url">🔗 Link Ver</button>
-      <button class="tab" data-tab="trans">🎙️ Transkript</button>
+    <div class="seg" role="tablist">
+      <button class="segbtn active" data-tab="text" role="tab"><span class="ic">✍️</span>Metin</button>
+      <button class="segbtn" data-tab="file" role="tab"><span class="ic">📄</span>Dosya</button>
+      <button class="segbtn" data-tab="url" role="tab"><span class="ic">🔗</span>Link</button>
+      <button class="segbtn" data-tab="trans" role="tab"><span class="ic">🎙️</span>Transkript</button>
     </div>
 
     <div id="pane-text">
-      <textarea id="text" placeholder="Buraya okunacak metni yapıştırın…&#10;&#10;Uzun metinler otomatik olarak parçalara bölünür ve tek bir MP3 olarak birleştirilir."></textarea>
+      <textarea id="text" placeholder="Buraya okunacak metni yapıştır…&#10;&#10;Uzun metinler otomatik parçalanır ve tek bir MP3'te birleştirilir."></textarea>
       <div class="counter" id="counter">0 karakter</div>
     </div>
 
@@ -88,37 +235,37 @@ footer a{color:var(--muted)}
       <div class="drop" id="drop">
         <div class="big">📄</div>
         <div><b>Tıkla veya dosyayı buraya bırak</b></div>
-        <div class="info">.txt, .md, .csv veya PDF (metin katmanlı)</div>
+        <div class="info">.txt, .md, .csv veya PDF (metin katmanlı) · 12MB'a kadar</div>
       </div>
       <input type="file" id="file" accept=".txt,.md,.csv,.pdf,text/plain,application/pdf" style="display:none">
       <div class="filerow" id="filerow" style="display:none">
-        <span>📎 <b id="fname"></b> — <span id="fchars"></span></span>
-        <button class="btn ghost" id="fclear" style="padding:6px 14px;font-size:13px">Kaldır</button>
+        <span style="flex:1">📎 <b id="fname"></b> — <span id="fchars"></span></span>
+        <button class="btn ghost" id="fclear" style="padding:7px 14px;font-size:13px;min-height:0">Kaldır</button>
       </div>
     </div>
 
     <div id="pane-url" style="display:none">
-      <input type="url" id="url" placeholder="https://ornek-site.com/makale" spellcheck="false">
-      <div class="info" id="urlinfo">Sayfa sunucudan çekilir; reklam, menü, script gibi öğeler ayıklanır, sadece içerik metni gelir.</div>
+      <input type="url" id="url" placeholder="https://ornek-site.com/makale" spellcheck="false" inputmode="url">
+      <div class="info" id="urlinfo">Sayfa sunucudan çekilir; reklam, menü, script ayıklanır — sadece içerik metni gelir.</div>
     </div>
 
     <div id="pane-trans" style="display:none">
       <div class="drop" id="tdrop">
         <div class="big">🎧</div>
         <div><b>Ses/video dosyasını tıkla veya buraya bırak</b></div>
-        <div class="info">mp3, wav, m4a, mp4, webm, ogg, flac · en fazla 100MB · sunucuda Whisper ile yazıya çevrilir</div>
+        <div class="info">mp3, wav, m4a, mp4, webm, ogg, flac · 100MB'a kadar · Whisper turbo ile yazıya çevrilir</div>
       </div>
       <input type="file" id="tfile" accept="audio/*,video/*,.mp3,.wav,.m4a,.mp4,.webm,.ogg,.flac,.aac" style="display:none">
       <div class="filerow" id="trow" style="display:none">
-        <span>📎 <b id="tname"></b> — <span id="tstatus"></span></span>
+        <span style="flex:1">📎 <b id="tname"></b> — <span id="tstatus"></span></span>
       </div>
       <div class="progress-wrap" id="tprog" style="display:none">
         <div class="pbar"><div id="tfill"></div></div>
         <div class="ptext" id="tptext">Kuyrukta…</div>
       </div>
       <div class="result" id="tresult">
-        <div id="tmeta" style="color:var(--muted);font-size:13px;margin-bottom:10px"></div>
-        <div id="tpreview" style="max-height:260px;overflow:auto;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:14px;font-size:14px;line-height:1.7;white-space:pre-wrap;margin-bottom:14px"></div>
+        <div id="tmeta"></div>
+        <div id="tpreview"></div>
         <div class="res-actions">
           <a class="btn" id="tdl-srt">⬇️ SRT</a>
           <a class="btn ghost" id="tdl-txt">⬇️ TXT</a>
@@ -130,7 +277,7 @@ footer a{color:var(--muted)}
       <div class="err" id="terr"></div>
     </div>
 
-    <div class="row">
+    <div class="controls">
       <div class="field">
         <label for="voice">Ses</label>
         <select id="voice"></select>
@@ -162,7 +309,7 @@ footer a{color:var(--muted)}
     </div>
     <div class="err" id="err"></div>
     <div class="result" id="result">
-      <audio id="audio" controls></audio>
+      <div class="audiobox"><audio id="audio" controls playsinline></audio></div>
       <div class="res-actions">
         <a class="btn" id="dl" download="seslendirme.mp3">⬇️ MP3 indir</a>
         <button class="btn ghost" id="again">↺ Yeni metin</button>
@@ -170,14 +317,14 @@ footer a{color:var(--muted)}
     </div>
   </div>
 
-  <footer>voice.stuqio.com — sunucu taraflı seslendirme · edge-tts</footer>
+  <footer><b>voice.stuqio.com</b> — sunucu taraflı seslendirme & transkripsiyon</footer>
 </div>
 
 <script>
 (function(){
 "use strict";
 var $=function(id){return document.getElementById(id)};
-var state={tab:"text",fileText:null,voices:[],maxChars:4500,busy:false,urlAbort:false};
+var state={tab:"text",fileText:null,voices:[],maxChars:4500,busy:false,urlText:null};
 
 // sesleri yukle
 fetch("/api/voices").then(function(r){return r.json()}).then(function(d){
@@ -195,16 +342,15 @@ fetch("/api/voices").then(function(r){return r.json()}).then(function(d){
     });
     sel.appendChild(g);
   });
-  // varsayilan Turkce
   for(var i=0;i<sel.options.length;i++){
     if(sel.options[i].value==="tr-TR-AhmetNeural"){sel.selectedIndex=i;break;}
   }
 }).catch(function(){});
 
 // sekmeler
-document.querySelectorAll(".tab").forEach(function(t){
+document.querySelectorAll(".segbtn").forEach(function(t){
   t.addEventListener("click",function(){
-    document.querySelectorAll(".tab").forEach(function(x){x.classList.remove("active")});
+    document.querySelectorAll(".segbtn").forEach(function(x){x.classList.remove("active")});
     t.classList.add("active");
     state.tab=t.getAttribute("data-tab");
     ["text","file","url","trans"].forEach(function(p){
@@ -227,10 +373,11 @@ $("text").addEventListener("input",updateCounter);
 function getText(){
   if(state.tab==="text")return $("text").value.trim();
   if(state.tab==="file")return state.fileText||"";
+  if(state.tab==="url")return state.urlText||"";
   return "";
 }
 
-// dosya
+// dosya (metin)
 var drop=$("drop"),fileInput=$("file");
 drop.addEventListener("click",function(){fileInput.click()});
 ["dragover","dragenter"].forEach(function(ev){
@@ -251,8 +398,6 @@ $("fclear").addEventListener("click",function(e){
 });
 function handleFile(f){
   if(f.size>12*1024*1024){showError("Dosya 12MB sınırını aşıyor.");return}
-  var fd=new FormData();
-  fd.append("f",f);
   drop.style.display="none";
   $("fname").textContent=f.name;
   $("fchars").textContent="okunuyor…";
@@ -286,23 +431,13 @@ function pullUrl(v){
     .then(function(r){return r.json().then(function(j){return {ok:r.ok,j:j}})})
     .then(function(res){
       if(!res.ok||res.j.error)throw new Error(res.j.error||"Sayfa çekilemedi.");
-      var t=res.j.title?("“"+res.j.title+"” "):"";
-      $("url").style.borderColor="var(--accent)";
+      var t=res.j.title?("“"+res.j.title+"” · "):"";
       showErrorClear();
-      // metni gizli tut, seslendir dediginde kullan
       state.urlText=res.j.text;
-      var info=document.querySelector(".info");
-      var counterObj=document.querySelector("#pane-url .info");
-      counterObj.textContent=t+res.j.text.length.toLocaleString("tr-TR")+" karakter metin alındı — hazır ✅";
+      $("urlinfo").textContent=t+res.j.text.length.toLocaleString("tr-TR")+" karakter metin alındı — hazır ✅";
     })
     .catch(function(e){showError("Link okunamadı: "+e.message)});
 }
-// getText override: url tab
-var getTextBase=getText;
-getText=function(){
-  if(state.tab==="url")return state.urlText||"";
-  return getTextBase();
-};
 
 // hata
 function showError(m){var e=$("err");e.textContent=m;e.classList.add("show")}
@@ -312,13 +447,11 @@ function showErrorClear(){$("err").classList.remove("show")}
 function chunkText(text,max){
   if(text.length<=max)return [text];
   var chunks=[],cur="";
-  // once paragraf, sonra cumle, sonra kelime
   var parts=text.split(/\n{2,}/);
   var flush=function(){if(cur.trim()){chunks.push(cur.trim());cur=""}};
   var pushPiece=function(p){
     if((cur+"\n\n"+p).length>max&&cur)flush();
     if(p.length<=max){cur=cur?cur+"\n\n"+p:p;return}
-    // p tek basina buyuk -> cumlelere bol
     var sents=p.match(/[^.!?…]+[.!?…]+[\s]*|[^.!?…]+$/g)||[p];
     sents.forEach(function(s){
       if((cur+" "+s).length>max&&cur)flush();
@@ -343,6 +476,7 @@ $("go").addEventListener("click",function(){
   showErrorClear();
   var text=getText();
   if(!text){showError("Önce bir metin, dosya veya link hazırla.");return}
+  if(state.tab==="trans"){showError("Transkript sekmesinde 'Bunu Seslendir' butonunu kullan.");return}
   var voice=$("voice").value||"tr-TR-AhmetNeural";
   var rate=$("rate").value,pitch=$("pitch").value;
   var chunks=chunkText(text,state.maxChars);
@@ -387,6 +521,7 @@ $("go").addEventListener("click",function(){
       (blob.size/1024/1024).toFixed(1)+" MB";
     $("pfill").style.width="100%";
     state.busy=false;$("go").disabled=false;
+    $("result").scrollIntoView({behavior:"smooth",block:"nearest"});
     $("audio").play().catch(function(){});
   }
 });
@@ -460,17 +595,17 @@ function pollTrans(){
             $("tdl-"+fmt).href="/api/transcribe/"+tjobId+"/download/"+fmt;
           });
           $("tresult").classList.add("show");
+          $("tresult").scrollIntoView({behavior:"smooth",block:"nearest"});
         }
       })
-      .catch(function(){/* poll hatasi: sessizce devam */});
+      .catch(function(){});
   },2500);
 }
 
 $("ttts").addEventListener("click",function(){
   var t=$("tpreview").textContent.trim();
   if(!t){tErr("Seslendirilecek metin yok.");return}
-  // metin sekmesine tasi ve seslendir
-  document.querySelector('.tab[data-tab="text"]').click();
+  document.querySelector('.segbtn[data-tab="text"]').click();
   $("text").value=t;
   $("text").dispatchEvent(new Event("input"));
   $("go").click();
