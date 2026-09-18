@@ -12,7 +12,7 @@ RUN mkdir -p /models && python -c "from faster_whisper import WhisperModel; Whis
 RUN mkdir -p /app
 WORKDIR /app
 # self-cloning: REST ile olusturulan dockerfile-pack uygulamalarinda build context bostur
-ARG GIT_REF=v1.1
+ARG GIT_REF=v1.2
 RUN git clone --depth 1 --branch $GIT_REF https://github.com/sercansolmaz/voice-stuqio.git /tmp/src \
     && cp /tmp/src/app.py /tmp/src/README.md . && cp -r /tmp/src/public ./public && rm -rf /tmp/src
 
