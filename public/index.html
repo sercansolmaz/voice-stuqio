@@ -251,6 +251,20 @@ footer b{background:var(--grad);-webkit-background-clip:text;background-clip:tex
     </div>
 
     <div id="pane-trans" style="display:none">
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px">
+        <button class="btn ghost" id="tmic" style="flex:1;min-width:150px">🎤 Mikrofonla Kaydet</button>
+        <button class="btn ghost" id="tupload" style="flex:1;min-width:150px">📎 Dosya Yükle</button>
+      </div>
+      <div id="tmicbox" style="display:none;background:rgba(0,0,0,.3);border:1px solid var(--stroke);border-radius:var(--r-md);padding:18px;text-align:center">
+        <div id="tmictime" style="font-size:28px;font-weight:800;letter-spacing:.5px;font-variant-numeric:tabular-nums">0:00</div>
+        <div id="tmichint" style="color:var(--muted);font-size:13px;margin:6px 0 14px">Konuşmaya başla — dalga formu kaydın yapıldığını gösterir</div>
+        <canvas id="tlivewave" style="width:100%;height:64px;border-radius:10px;background:rgba(0,0,0,.25);margin-bottom:12px"></canvas>
+        <div id="tplay"></div>
+        <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap" id="tmicbtns">
+          <button class="btn" id="tmicbtn">⏺ Kaydı Başlat</button>
+          <button class="btn" id="tmicuse" style="display:none">✍️ Transkribe Et</button>
+        </div>
+      </div>
       <div class="drop" id="tdrop">
         <div class="big">🎧</div>
         <div><b>Ses/video dosyasını tıkla veya buraya bırak</b></div>
@@ -287,7 +301,8 @@ footer b{background:var(--grad);-webkit-background-clip:text;background-clip:tex
       <div id="cmicbox" style="display:none;background:rgba(0,0,0,.3);border:1px solid var(--stroke);border-radius:var(--r-md);padding:18px;text-align:center">
         <div id="cmictime" style="font-size:28px;font-weight:800;letter-spacing:.5px;font-variant-numeric:tabular-nums">0:00</div>
         <div id="cmichint" style="color:var(--muted);font-size:13px;margin:6px 0 14px">Sessiz bir ortamda, mikrofona 10-15 cm mesafeden, doğal bir hızda oku — benzerlik büyük ölçüde kayıt kalitesine bağlı</div>
-        <div class="pbar" style="margin-bottom:14px"><div id="cmiclevel" style="width:0%;transition:width .1s"></div></div>
+        <canvas id="clivewave" style="width:100%;height:64px;border-radius:10px;background:rgba(0,0,0,.25);margin-bottom:12px"></canvas>
+        <div id="cplay"></div>
         <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap" id="cmicbtns">
           <button class="btn" id="cmicbtn">⏺ Kaydı Başlat</button>
           <button class="btn ghost" id="cmicuse" style="display:none">✅ Bu kaydı kullan</button>
@@ -693,7 +708,6 @@ $("ttts").addEventListener("click",function(){
 
 // ===== SES KLONLAMA =====
 var cdrop=$("cdrop"),cfile=$("cfile"),cjobId=null,cpoller=null,cfileObj=null;
-var micState={rec:null,chunks:[],timer:null,raf:null,ctx:null,analyser:null,seconds:0,blob:null};
 
 // ornek metinler
 var CEX=["Merhaba, bu benim sesim. Bugün hava çok güzel ve ben sesimin kopyasını oluşturmak için bu metni okuyorum. Teknolojinin geldiği nokta gerçekten etkileyici; birkaç saniyelik kayıttan sonra yazdığım her metni benim tonumda dinleyebileceksiniz.",
@@ -718,72 +732,199 @@ $("cexshuffle").addEventListener("click",function(){
 
 function micFmt(s){var m=Math.floor(s/60),x=Math.floor(s%60);return m+":"+(x<10?"0":"")+x}
 
-$("cmicbtn").addEventListener("click",async function(){
-  var btn=$("cmicbtn");
-  if(micState.rec&&micState.rec.state==="recording"){micState.rec.stop();return}
-  try{
-    var stream=await navigator.mediaDevices.getUserMedia({audio:true});
-  }catch(e){cErr("Mikrofona erişilemedi: "+e.message);return}
-  micState.seconds=0;micState.blob=null;
-  $("cmictime").textContent="0:00";
-  $("cmicuse").style.display="none";
-  btn.textContent="⏹ Kaydı Durdur";
-  // seviye olcer
-  micState.ctx=new (window.AudioContext||window.webkitAudioContext)();
-  var src=micState.ctx.createMediaStreamSource(stream);
-  micState.analyser=micState.ctx.createAnalyser();
-  micState.analyser.fftSize=256;
-  src.connect(micState.analyser);
-  var data=new Uint8Array(micState.analyser.frequencyBinCount);
-  function level(){
-    if(!micState.analyser)return;
-    micState.analyser.getByteFrequencyData(data);
-    var avg=data.reduce(function(a,b){return a+b},0)/data.length;
-    $("cmiclevel").style.width=Math.min(100,avg*1.4)+"%";
-    micState.raf=requestAnimationFrame(level);
+// ---- paylasilan mikrofon + dalga formu modulu ----
+function LiveRecorder(opts){
+  // opts: {btn, timeEl, hintEl, waveCanvas, playBox, minSec, onDone(blob,file), doneHint, useBtn, onUse}
+  var st={rec:null,chunks:[],timer:null,raf:null,ctx:null,analyser:null,seconds:0,blob:null,audio:null};
+  var canvas=opts.waveCanvas,ctx2d=canvas.getContext("2d");
+  var peaks=[];  // kayit sirasinda toplanan genlikler (yakin gecmis)
+  var PEAK_N=220; // ekranda tutacak tepe sayisi
+  function fmt(s){var m=Math.floor(s/60),x=Math.floor(s%60);return m+":"+(x<10?"0":"")+x}
+  function drawIdle(){
+    var w=canvas.width=canvas.clientWidth*devicePixelRatio;
+    var h=canvas.height=canvas.clientHeight*devicePixelRatio;
+    ctx2d.clearRect(0,0,w,h);
+    ctx2d.strokeStyle="rgba(139,124,255,.35)";
+    ctx2d.lineWidth=2*devicePixelRatio;
+    ctx2d.beginPath();ctx2d.moveTo(0,h/2);ctx2d.lineTo(w,h/2);ctx2d.stroke();
   }
-  level();
-  micState.timer=setInterval(function(){
-    micState.seconds+=0.1;
-    $("cmictime").textContent=micFmt(micState.seconds);
-  },100);
-  // kayit
-  var mime=MediaRecorder.isTypeSupported("audio/webm;codecs=opus")?"audio/webm;codecs=opus":"";
-  micState.rec=new MediaRecorder(stream,mime?{mimeType:mime}:undefined);
-  micState.chunks=[];
-  micState.rec.ondataavailable=function(e){if(e.data.size)micState.chunks.push(e.data)};
-  micState.rec.onstop=function(){
-    clearInterval(micState.timer);
-    cancelAnimationFrame(micState.raf);
-    stream.getTracks().forEach(function(t){t.stop()});
-    micState.ctx.close();
-    $("cmiclevel").style.width="0%";
-    btn.textContent="⏺ Tekrar Kaydet";
-    micState.blob=new Blob(micState.chunks,{type:micState.rec.mimeType||"audio/webm"});
-    var dur=micState.seconds;
-    if(dur<5){cErr("Kayıt çok kısa ("+dur.toFixed(1)+" sn) — en az 6-8 saniye oku.");$("cmicuse").style.display="none";return}
-    // kaydi otomatik olarak ses ornegi olarak kullan
-    var f=new File([micState.blob],"mikrofon-kaydi"+(micState.blob.type.indexOf("mp4")>=0?".m4a":".webm"),{type:micState.blob.type||"audio/webm"});
-    setCloneFile(f);
-    $("cmichint").textContent="Kayıt hazır: "+micFmt(dur)+" — istersen tekrar kaydet, sonra aşağıdan metnini yazıp Klonla";
-    // onizleme
-    var url=URL.createObjectURL(micState.blob);
-    var a=document.createElement("audio");
-    a.controls=true;a.src=url;a.style.cssText="width:100%;margin:10px 0;display:block";
-    var old=$("cmicbox").querySelector("audio");
-    if(old)old.remove();
-    $("cmicbtns").parentNode.insertBefore(a,$("cmicbtns"));
-  };
-  micState.rec.start(100);
+  drawIdle();
+  window.addEventListener("resize",drawIdle);
+  function drawLive(){
+    if(!st.analyser)return;
+    var data=new Uint8Array(st.analyser.frequencyBinCount);
+    st.analyser.getByteFrequencyData(data);
+    var sum=0;for(var i=0;i<data.length;i++)sum+=data[i]*data[i];
+    var rms=Math.sqrt(sum/data.length)/255;
+    peaks.push(rms);if(peaks.length>PEAK_N)peaks.shift();
+    var w=canvas.width,h=canvas.height;
+    ctx2d.clearRect(0,0,w,h);
+    var grad=ctx2d.createLinearGradient(0,0,w,0);
+    grad.addColorStop(0,"rgba(139,124,255,.95)");
+    grad.addColorStop(1,"rgba(76,201,240,.95)");
+    ctx2d.fillStyle=grad;
+    var bw=w/PEAK_N;
+    for(var i=0;i<peaks.length;i++){
+      var v=Math.max(.03,peaks[i]*2.2);
+      var bh=v*h*.9;
+      ctx2d.fillRect(i*bw,(h-bh)/2,Math.max(1,bw*.66),bh);
+    }
+    st.raf=requestAnimationFrame(drawLive);
+  }
+  opts.btn.addEventListener("click",async function(){
+    if(st.rec&&st.rec.state==="recording"){st.rec.stop();return}
+    try{var stream=await navigator.mediaDevices.getUserMedia({audio:true})}
+    catch(e){cErr("Mikrofona erişilemedi: "+e.message);return}
+    st.seconds=0;st.blob=null;peaks=[];
+    opts.timeEl.textContent="0:00";
+    opts.btn.textContent="⏹ Kaydı Durdur";
+    opts.playBox.innerHTML="";
+    if(opts.useBtn)opts.useBtn.style.display="none";
+    st.ctx=new (window.AudioContext||window.webkitAudioContext)();
+    var srcN=st.ctx.createMediaStreamSource(stream);
+    st.analyser=st.ctx.createAnalyser();
+    st.analyser.fftSize=1024;
+    srcN.connect(st.analyser);
+    drawLive();
+    st.timer=setInterval(function(){
+      st.seconds+=0.1;
+      opts.timeEl.textContent=fmt(st.seconds);
+    },100);
+    var mime=MediaRecorder.isTypeSupported("audio/webm;codecs=opus")?"audio/webm;codecs=opus":"";
+    st.rec=new MediaRecorder(stream,mime?{mimeType:mime}:undefined);
+    st.chunks=[];
+    st.rec.ondataavailable=function(e){if(e.data.size)st.chunks.push(e.data)};
+    st.rec.onstop=function(){
+      clearInterval(st.timer);
+      cancelAnimationFrame(st.raf);
+      stream.getTracks().forEach(function(t){t.stop()});
+      st.ctx.close();st.analyser=null;
+      drawIdle();
+      opts.btn.textContent="⏺ Tekrar Kaydet";
+      st.blob=new Blob(st.chunks,{type:st.rec.mimeType||"audio/webm"});
+      var dur=st.seconds;
+      if(dur<(opts.minSec||3)){
+        cErr("Kayıt çok kısa ("+dur.toFixed(1)+" sn)"+(opts.minSec?" — en az "+opts.minSec+" saniye":""));
+        opts.playBox.innerHTML="";
+        return;
+      }
+      opts.hintEl.textContent=(opts.doneHint||"Kayıt hazır")+": "+fmt(dur);
+      showPlayer();
+      if(opts.onDone)opts.onDone(st.blob);
+      if(opts.useBtn)opts.useBtn.style.display="";
+    };
+    st.rec.start(100);
+  });
+  // ---- kayit oynaticisi: statik dalga formu + tiklamayla konumlandirma ----
+  function showPlayer(){
+    var url=URL.createObjectURL(st.blob);
+    opts.playBox.innerHTML="";
+    var wrap=document.createElement("div");
+    wrap.style.cssText="display:flex;align-items:center;gap:10px;margin:12px 0";
+    var pb=document.createElement("button");
+    pb.className="btn ghost";
+    pb.style.cssText="min-height:44px;min-width:56px;font-size:18px";
+    pb.textContent="▶";
+    var cv=document.createElement("canvas");
+    cv.style.cssText="flex:1;height:56px;border-radius:8px;background:rgba(0,0,0,.3);cursor:pointer;display:block";
+    var audio=new Audio();audio.src=url;audio.preload="auto";st.audio=audio;
+    wrap.appendChild(pb);wrap.appendChild(cv);
+    opts.playBox.appendChild(wrap);
+    var c2=cv.getContext("2d");
+    var staticPeaks=null;
+    function renderStatic(pos){
+      var w=cv.width=cv.clientWidth*devicePixelRatio,h=cv.height=cv.clientHeight*devicePixelRatio;
+      c2.clearRect(0,0,w,h);
+      if(!staticPeaks)return;
+      var n=staticPeaks.length,bw=w/n;
+      for(var i=0;i<n;i++){
+        var frac=i/n;
+        var played=frac<=(pos||0);
+        c2.fillStyle=played?"rgba(139,124,255,.95)":"rgba(255,255,255,.22)";
+        var v=Math.max(.04,staticPeaks[i]);
+        var bh=v*h*.92;
+        c2.fillRect(i*bw,(h-bh)/2,Math.max(1,bw*.7),bh);
+      }
+    }
+    audio.addEventListener("loadedmetadata",function(){
+      // decode ederek gercek dalga formu ciz
+      var fr=new FileReader();
+      fr.onload=function(){
+        (window.AudioContext||window.webkitAudioContext)({sampleRate:16000})&&0;
+        var ac=new (window.AudioContext||window.webkitAudioContext)();
+        ac.decodeAudioData(fr.result).then(function(buf){
+          var ch=buf.getChannelData(0);
+          var n=160,step=Math.floor(ch.length/n)||1;
+          staticPeaks=[];
+          for(var i=0;i<n;i++){
+            var mx=0;
+            for(var j=i*step;j<Math.min((i+1)*step,ch.length);j+=Math.max(1,Math.floor(step/50))){
+              var a=Math.abs(ch[j]);if(a>mx)mx=a;
+            }
+            staticPeaks.push(Math.min(1,mx*1.4));
+          }
+          ac.close();
+          renderStatic(0);
+        }).catch(function(){staticPeaks=[];renderStatic(0)});
+      };
+      fr.readAsArrayBuffer(st.blob);
+    });
+    audio.addEventListener("timeupdate",function(){
+      if(audio.duration)renderStatic(audio.currentTime/audio.duration);
+    });
+    pb.addEventListener("click",function(){
+      if(audio.paused){audio.play();pb.textContent="⏸"}else{audio.pause();pb.textContent="▶"}
+    });
+    cv.addEventListener("click",function(ev){
+      var r=cv.getBoundingClientRect();
+      var frac=(ev.clientX-r.left)/r.width;
+      if(audio.duration)audio.currentTime=frac*audio.duration;
+      renderStatic(frac);
+    });
+    renderStatic(0);
+  }
+  return {get blob(){return st.blob},get audio(){return st.audio}};
+}
+
+// klonlama sekmisi kayitcisi
+var cloneRec = LiveRecorder({
+  btn:$("cmicbtn"), timeEl:$("cmictime"), hintEl:$("cmichint"),
+  waveCanvas:$("clivewave"), playBox:$("cplay"), minSec:5,
+  doneHint:"Kayıt hazır — istersen tekrar kaydet, sonra aşağıdan metnini yazıp Klonla",
+  useBtn:$("cmicuse"),
+  onDone:function(blob){
+    var ext=(blob.type.indexOf("mp4")>=0?".m4a":".webm");
+    setCloneFile(new File([blob],"mikrofon-kaydi"+ext,{type:blob.type||"audio/webm"}));
+  }
 });
 $("cmicuse").addEventListener("click",function(){
-  if(!micState.blob){cErr("Önce kayıt yap.");return}
-  var f=new File([micState.blob],"mikrofon-kaydi.webm",{type:micState.blob.type||"audio/webm"});
-  setCloneFile(f);
+  if(!cloneRec.blob){cErr("Önce kayıt yap.");return}
   $("cmicbox").style.display="none";
   $("cexample").style.display="none";
 });
 
+// transkript sekmisi kayitcisi
+var tRec = LiveRecorder({
+  btn:$("tmicbtn"), timeEl:$("tmictime"), hintEl:$("tmichint"),
+  waveCanvas:$("tlivewave"), playBox:$("tplay"), minSec:2,
+  doneHint:"Kayıt hazır",
+  useBtn:$("tmicuse")
+});
+$("tmic").addEventListener("click",function(){
+  $("tmicbox").style.display=$("tmicbox").style.display==="none"?"":"none";
+  if($("tmicbox").style.display!=="none")tdrop.style.display="none";
+});
+$("tupload").addEventListener("click",function(){
+  $("tmicbox").style.display="none";
+  tdrop.style.display="";
+});
+$("tmicuse").addEventListener("click",function(){
+  if(!tRec.blob){tErr("Önce kayıt yap.");return}
+  var ext=(tRec.blob.type.indexOf("mp4")>=0?".m4a":".webm");
+  var f=new File([tRec.blob],"mikrofon-kaydi"+ext,{type:tRec.blob.type||"audio/webm"});
+  $("tmicbox").style.display="none";
+  startTrans(f);
+});
 cdrop.addEventListener("click",function(){cfile.click()});
 ["dragover","dragenter"].forEach(function(ev){
   cdrop.addEventListener(ev,function(e){e.preventDefault();cdrop.classList.add("over")});
